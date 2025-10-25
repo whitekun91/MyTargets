@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { LogIn } from 'lucide-react'
 import Navigation from './components/Navigation'
 import AnalyticsDashboard from './components/AnalyticsDashboard'
+import ScoreInput from './components/ScoreInput'
+import Competition from './components/Competition'
+import Footer from './components/Footer'
 import './index.css'
 
 function App() {
@@ -50,10 +54,24 @@ function App() {
 
   if (isLoggedIn) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-        <Navigation />
-        <AnalyticsDashboard />
-      </div>
+      <Router>
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex flex-col">
+          <Navigation />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<AnalyticsDashboard />} />
+              <Route path="/trainings" element={<ScoreInput />} />
+              <Route path="/competitions" element={<Competition />} />
+              <Route path="/records" element={<AnalyticsDashboard />} />
+              <Route path="/analytics" element={<AnalyticsDashboard />} />
+              <Route path="/ranking" element={<Competition />} />
+              <Route path="/settings" element={<AnalyticsDashboard />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
+      </Router>
     )
   }
 
