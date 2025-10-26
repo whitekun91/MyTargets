@@ -33,7 +33,7 @@ const targets: TargetOption[] = [
 ]
 
 function TargetIcon({ targetType }: { targetType: string }) {
-  const size = 60
+  const size = 100
   const viewBox = 1 // Normalized viewBox (-1 to 1 = 2 units)
   const center = viewBox / 2
   let zones: Array<{ r: number; fill: string; strokeColor: string; strokeWidth: number }> = []
@@ -174,15 +174,15 @@ export default function TargetSelector({ value, onChange }: TargetSelectorProps)
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-3 px-3 py-2 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center gap-6 px-4 py-4 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
         style={{ border: 'none', outline: 'none' }}
       >
                           {selectedTarget && (
             <>
               <TargetIcon targetType={selectedTarget.id} />
-              <div className="flex-1 text-left pl-5">
-                <p className="text-sm font-medium text-gray-900">{selectedTarget.name}</p>
-                <p className="text-xs text-gray-500">{selectedTarget.description || '60cm (Recurve style 10-6)'}</p>
+              <div className="flex-1 text-left pl-2">
+                <p className="text-lg font-medium text-gray-900">{selectedTarget.name}</p>
+                <p className="text-sm text-gray-500">{selectedTarget.description || '60cm (Recurve style 10-6)'}</p>
               </div>
             </>
           )}
@@ -211,15 +211,15 @@ export default function TargetSelector({ value, onChange }: TargetSelectorProps)
                   onChange(target.id)
                   setIsOpen(false)
                 }}
-                className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors ${
+                className={`w-full flex items-center gap-6 px-4 py-4 hover:bg-gray-50 transition-colors ${
                   value === target.id ? 'bg-gray-100' : ''
                 }`}
                 style={{ border: 'none', outline: 'none' }}
               >
                                                   <TargetIcon targetType={target.id} />
-                  <div className="flex-1 text-left pl-5">
-                    <p className="text-sm font-medium text-gray-900">{target.name}</p>
-                    <p className="text-xs text-gray-500">{target.description || '60cm (Recurve style 10-6)'}</p>
+                  <div className="flex-1 text-left pl-2">
+                    <p className="text-lg font-medium text-gray-900">{target.name}</p>
+                    <p className="text-sm text-gray-500">{target.description || '60cm (Recurve style 10-6)'}</p>
                   </div>
               </button>
             ))}

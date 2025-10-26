@@ -137,4 +137,47 @@ export const authAPI = {
   },
 };
 
+export const trainingAPI = {
+  createSession: async (data: {
+    session_name: string;
+    distance?: number;
+    target_type?: string;
+    arrow_count?: number;
+  }): Promise<ApiResponse<{ session: any }>> => {
+    return apiRequest<{ session: any }>('/training/session', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getSession: async (sessionId: number): Promise<ApiResponse<{ session: any }>> => {
+    return apiRequest<{ session: any }>(`/training/session/${sessionId}`);
+  },
+
+  getScores: async (trainingId: number, roundNumber: number): Promise<ApiResponse<{ scores: any[] }>> => {
+    return apiRequest<{ scores: any[] }>(`/training/scores/${trainingId}/${roundNumber}`);
+  },
+
+  getTrainingSessions: async (): Promise<ApiResponse<{ sessions: any[] }>> => {
+    return apiRequest<{ sessions: any[] }>('/training/sessions');
+  },
+
+  recordScore: async (data: {
+    training_id: number;
+    round_number: number;
+    score: number;
+    arrow_number: number;
+  }): Promise<ApiResponse> => {
+    return apiRequest('/training/score', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  deleteScore: async (trainingId: number, roundNumber: number, arrowNumber: number): Promise<ApiResponse<{ total_score: number }>> => {
+    return apiRequest<{ total_score: number }>(`/training/scores/${trainingId}/${roundNumber}/${arrowNumber}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
 export default authAPI;

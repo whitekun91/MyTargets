@@ -106,6 +106,146 @@ const createUsersTable = async () => {
   }
 };
 
+// training 테이블 생성
+const createTrainingTable = async () => {
+  try {
+    const client = await pool.connect();
+    
+    // 기존 테이블 존재 여부 확인
+    const tableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'training'
+      );
+    `);
+    
+    const tableExists = tableCheck.rows[0].exists;
+    
+    if (tableExists) {
+      console.log('✓ training 테이블이 이미 존재합니다.');
+    } else {
+      console.log('⚠ training 테이블이 없습니다. 테이블을 생성합니다...');
+    }
+    
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS training (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        organization VARCHAR(100) NOT NULL,
+        session_name VARCHAR(100) NOT NULL,
+        date DATE NOT NULL DEFAULT CURRENT_DATE,
+        distance INTEGER,
+        target_type VARCHAR(100),
+        arrow_count INTEGER DEFAULT 6,
+        current_round INTEGER DEFAULT 1,
+        total_score INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+    
+    await client.query(createTableQuery);
+    
+    if (!tableExists) {
+      console.log('✓ training 테이블이 성공적으로 생성되었습니다.');
+    } else {
+      // 기존 테이블에서 사용하지 않는 컬럼들 삭제
+      try {
+        // weather 컬럼 삭제
+        await client.query(`
+          ALTER TABLE training DROP COLUMN IF EXISTS weather;
+        `);
+        console.log('✓ weather 컬럼 삭제 완료');
+      } catch (error) {
+        console.log('weather 컬럼 삭제 시도 (이미 삭제되었을 수 있음):', error.message);
+      }
+      
+      try {
+        // wind 컬럼 삭제
+        await client.query(`
+          ALTER TABLE training DROP COLUMN IF EXISTS wind;
+        `);
+        console.log('✓ wind 컬럼 삭제 완료');
+      } catch (error) {
+        console.log('wind 컬럼 삭제 시도 (이미 삭제되었을 수 있음):', error.message);
+      }
+      
+      try {
+        // total_rounds 컬럼 삭제
+        await client.query(`
+          ALTER TABLE training DROP COLUMN IF EXISTS total_rounds;
+        `);
+        console.log('✓ total_rounds 컬럼 삭제 완료');
+      } catch (error) {
+        console.log('total_rounds 컬럼 삭제 시도 (이미 삭제되었을 수 있음):', error.message);
+      }
+      
+      try {
+        // arrow_count 컬럼 추가
+        await client.query(`
+          ALTER TABLE training ADD COLUMN IF NOT EXISTS arrow_count INTEGER DEFAULT 6;
+        `);
+        console.log('✓ arrow_count 컬럼 추가 완료');
+      } catch (error) {
+        console.log('arrow_count 컬럼 추가 시도 (이미 존재할 수 있음):', error.message);
+      }
+    }
+    
+    client.release();
+  } catch (error) {
+    console.error('training 테이블 생성 실패:', error);
+    throw error;
+  }
+};
+
+// training_scores 테이블 생성 (개별 점수 기록용)
+const createTrainingScoresTable = async () => {
+  try {
+    const client = await pool.connect();
+    
+    // 기존 테이블 존재 여부 확인
+    const tableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'training_scores'
+      );
+    `);
+    
+    const tableExists = tableCheck.rows[0].exists;
+    
+    if (tableExists) {
+      console.log('✓ training_scores 테이블이 이미 존재합니다.');
+    } else {
+      console.log('⚠ training_scores 테이블이 없습니다. 테이블을 생성합니다...');
+    }
+    
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS training_scores (
+        id SERIAL PRIMARY KEY,
+        training_id INTEGER NOT NULL REFERENCES training(id) ON DELETE CASCADE,
+        round_number INTEGER NOT NULL,
+        score INTEGER NOT NULL,
+        arrow_number INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+    
+    await client.query(createTableQuery);
+    
+    if (!tableExists) {
+      console.log('✓ training_scores 테이블이 성공적으로 생성되었습니다.');
+    }
+    
+    client.release();
+  } catch (error) {
+    console.error('training_scores 테이블 생성 실패:', error);
+    throw error;
+  }
+};
+
 // 기존 사용자 데이터 업데이트
 const updateExistingUsers = async () => {
   try {
@@ -443,6 +583,270 @@ app.get('/api/user/profile', async (req, res) => {
   }
 });
 
+// 훈련 세션 생성 API
+app.post('/api/training/session', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: '토큰이 제공되지 않았습니다.'
+      });
+    }
+
+    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const userResult = await pool.query('SELECT * FROM users WHERE user_id = $1', [decoded.userId]);
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '사용자를 찾을 수 없습니다.'
+      });
+    }
+
+    const user = userResult.rows[0];
+    const { session_name, distance, target_type, arrow_count } = req.body;
+
+    // 필수 필드 검증
+    if (!session_name) {
+      return res.status(400).json({
+        success: false,
+        message: '세션 이름을 입력해주세요.'
+      });
+    }
+
+    // 훈련 세션 생성
+    const result = await pool.query(
+      `INSERT INTO training (user_id, name, organization, session_name, distance, target_type, arrow_count) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [user.id, user.name, user.organization, session_name, distance, target_type, arrow_count || 6]
+    );
+
+    const newSession = result.rows[0];
+
+    res.status(201).json({
+      success: true,
+      message: '훈련 세션이 생성되었습니다.',
+      data: {
+        session: {
+          id: newSession.id,
+          session_name: newSession.session_name,
+          name: newSession.name,
+          organization: newSession.organization,
+          date: newSession.date,
+          distance: newSession.distance,
+          target_type: newSession.target_type,
+          arrow_count: newSession.arrow_count,
+          current_round: newSession.current_round,
+          total_score: newSession.total_score
+        }
+      }
+    });
+  } catch (error) {
+    console.error('훈련 세션 생성 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '서버 오류가 발생했습니다.'
+    });
+  }
+});
+
+// 훈련 세션 조회 API
+app.get('/api/training/session/:id', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: '토큰이 제공되지 않았습니다.'
+      });
+    }
+
+    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const sessionId = req.params.id;
+
+    const result = await pool.query(
+      'SELECT * FROM training WHERE id = $1 AND user_id = (SELECT id FROM users WHERE user_id = $2)',
+      [sessionId, decoded.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '훈련 세션을 찾을 수 없습니다.'
+      });
+    }
+
+    const session = result.rows[0];
+
+    res.json({
+      success: true,
+      data: {
+        session: {
+          id: session.id,
+          session_name: session.session_name,
+          name: session.name,
+          organization: session.organization,
+          date: session.date,
+          distance: session.distance,
+          target_type: session.target_type,
+          arrow_count: session.arrow_count,
+          current_round: session.current_round,
+          total_score: session.total_score
+        }
+      }
+    });
+  } catch (error) {
+    console.error('훈련 세션 조회 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '서버 오류가 발생했습니다.'
+    });
+  }
+});
+
+// 점수 기록 API
+app.post('/api/training/score', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: '토큰이 제공되지 않았습니다.'
+      });
+    }
+
+    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const { training_id, round_number, score, arrow_number } = req.body;
+
+    // 필수 필드 검증
+    if (!training_id || !round_number || score === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: '필수 정보가 누락되었습니다.'
+      });
+    }
+
+    // 훈련 세션 존재 확인
+    const sessionResult = await pool.query(
+      'SELECT * FROM training WHERE id = $1 AND user_id = (SELECT id FROM users WHERE user_id = $2)',
+      [training_id, decoded.userId]
+    );
+
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '훈련 세션을 찾을 수 없습니다.'
+      });
+    }
+
+    // 점수 기록
+    const scoreResult = await pool.query(
+      'INSERT INTO training_scores (training_id, round_number, score, arrow_number) VALUES ($1, $2, $3, $4) RETURNING *',
+      [training_id, round_number, score, arrow_number]
+    );
+
+    // 훈련 세션의 총 점수 업데이트
+    const totalScoreResult = await pool.query(
+      'SELECT SUM(score) as total FROM training_scores WHERE training_id = $1',
+      [training_id]
+    );
+
+    const newTotalScore = totalScoreResult.rows[0].total || 0;
+
+    await pool.query(
+      'UPDATE training SET total_score = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [newTotalScore, training_id]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: '점수가 기록되었습니다.',
+      data: {
+        score: {
+          id: scoreResult.rows[0].id,
+          training_id: training_id,
+          round_number: round_number,
+          score: score,
+          arrow_number: arrow_number,
+          total_score: newTotalScore
+        }
+      }
+    });
+  } catch (error) {
+    console.error('점수 기록 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '서버 오류가 발생했습니다.'
+    });
+  }
+});
+
+// 점수 삭제 API
+app.delete('/api/training/scores/:trainingId/:roundNumber/:arrowNumber', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: '토큰이 제공되지 않았습니다.'
+      });
+    }
+
+    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const { trainingId, roundNumber, arrowNumber } = req.params;
+
+    // 훈련 세션 소유권 확인
+    const sessionResult = await pool.query(
+      'SELECT id FROM training WHERE id = $1 AND user_id = (SELECT id FROM users WHERE user_id = $2)',
+      [trainingId, decoded.userId]
+    );
+
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '훈련 세션을 찾을 수 없습니다.'
+      });
+    }
+
+    // 해당 화살의 점수 삭제
+    await pool.query(
+      'DELETE FROM training_scores WHERE training_id = $1 AND round_number = $2 AND arrow_number = $3',
+      [trainingId, roundNumber, arrowNumber]
+    );
+
+    // 훈련 세션의 총 점수 업데이트
+    const totalScoreResult = await pool.query(
+      'SELECT SUM(score) as total FROM training_scores WHERE training_id = $1',
+      [trainingId]
+    );
+
+    const newTotalScore = totalScoreResult.rows[0].total || 0;
+
+    await pool.query(
+      'UPDATE training SET total_score = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [newTotalScore, trainingId]
+    );
+
+    res.json({
+      success: true,
+      message: '점수가 삭제되었습니다.',
+      data: {
+        total_score: newTotalScore
+      }
+    });
+  } catch (error) {
+    console.error('점수 삭제 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '점수 삭제 중 오류가 발생했습니다.'
+    });
+  }
+});
+
 // 기본 라우트
 app.get('/', (req, res) => {
   res.json({
@@ -468,6 +872,14 @@ const startServer = async () => {
     console.log('🔍 users 테이블 확인 중...');
     // 사용자 테이블 생성
     await createUsersTable();
+
+    console.log('🔍 training 테이블 확인 중...');
+    // training 테이블 생성
+    await createTrainingTable();
+
+    console.log('🔍 training_scores 테이블 확인 중...');
+    // training_scores 테이블 생성
+    await createTrainingScoresTable();
 
     console.log('🔍 기존 사용자 데이터 업데이트 중...');
     // 기존 사용자 데이터 업데이트
@@ -519,6 +931,102 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('uncaughtException', (error) => {
   console.error('처리되지 않은 에러:', error);
   gracefulShutdown('uncaughtException');
+});
+
+// 사용자의 모든 훈련 세션 조회
+app.get('/api/training/sessions', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: '토큰이 제공되지 않았습니다.'
+      });
+    }
+
+    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+
+    // 사용자의 모든 훈련 세션 조회 (최신순)
+    const result = await pool.query(
+      'SELECT * FROM training WHERE user_id = (SELECT id FROM users WHERE user_id = $1) ORDER BY created_at DESC',
+      [decoded.userId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        sessions: result.rows.map(session => ({
+          id: session.id,
+          session_name: session.session_name,
+          name: session.name,
+          organization: session.organization,
+          date: session.date,
+          distance: session.distance,
+          target_type: session.target_type,
+          arrow_count: session.arrow_count,
+          current_round: session.current_round,
+          total_score: session.total_score,
+          created_at: session.created_at
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('훈련 세션 목록 조회 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '훈련 세션 목록 조회 중 오류가 발생했습니다.'
+    });
+  }
+});
+
+// 특정 라운드의 점수 조회
+app.get('/api/training/scores/:trainingId/:roundNumber', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: '토큰이 제공되지 않았습니다.'
+      });
+    }
+
+    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const { trainingId, roundNumber } = req.params;
+
+    // 훈련 세션 소유권 확인
+    const sessionResult = await pool.query(
+      'SELECT id FROM training WHERE id = $1 AND user_id = (SELECT id FROM users WHERE user_id = $2)',
+      [trainingId, decoded.userId]
+    );
+
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '훈련 세션을 찾을 수 없습니다.'
+      });
+    }
+
+    // 해당 라운드의 점수 조회
+    const scoresResult = await pool.query(
+      'SELECT * FROM training_scores WHERE training_id = $1 AND round_number = $2 ORDER BY arrow_number',
+      [trainingId, roundNumber]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        scores: scoresResult.rows
+      }
+    });
+  } catch (error) {
+    console.error('점수 조회 오류:', error);
+    res.status(500).json({
+      success: false,
+      message: '점수 조회 중 오류가 발생했습니다.'
+    });
+  }
 });
 
 process.on('unhandledRejection', (reason, promise) => {
