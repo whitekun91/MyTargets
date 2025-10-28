@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronUp, ChevronDown } from 'lucide-react'
 import { trainingAPI } from '../utils/api'
+import { Trash2 } from 'lucide-react'
 
 interface TrainingSession {
   id: number
@@ -87,6 +88,39 @@ export default function TrainingHistory({ onBack, onSelectSession }: TrainingHis
     onSelectSession(session)
   }
 
+  // 세션 삭제 핸들러
+  const handleDeleteSession = async (e: React.MouseEvent, session: TrainingSession) => {
+    e.stopPropagation()
+    const confirmed = window.confirm(`정말로 "${session.session_name}" 세션을 삭제하시겠습니까? (복구 불가)`)
+    if (!confirmed) return
+    try {
+      const res = await trainingAPI.deleteSession(session.id)
+      if (res.success) {
+        // 로컬 상태에서 제거
+        const newSessions = sessions.filter(s => s.id !== session.id)
+        setSessions(newSessions)
+        // 그룹 재구성
+        const grouped = newSessions.reduce((acc: GroupedSessions, s) => {
+          const date = new Date(s.date)
+          const monthKey = `${date.getFullYear()}년 ${date.getMonth() + 1}월`
+          if (!acc[monthKey]) acc[monthKey] = []
+          acc[monthKey].push(s)
+          return acc
+        }, {} as GroupedSessions)
+        setGroupedSessions(grouped)
+        // 비어있는 월은 자동으로 접기
+        const keptMonths = new Set(Object.keys(grouped))
+        setExpandedMonths(prev => new Set([...prev].filter(m => keptMonths.has(m))))
+        alert('세션이 삭제되었습니다.')
+      } else {
+        alert(res.message || '세션 삭제에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('세션 삭제 오류:', error)
+      alert('세션 삭제 중 오류가 발생했습니다.')
+    }
+  }
+
   // 날짜 포맷팅
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
@@ -163,13 +197,22 @@ export default function TrainingHistory({ onBack, onSelectSession }: TrainingHis
                               {formatDate(session.date)}
                             </p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-lg font-medium text-gray-900">
-                              {session.total_score}/{session.current_round * 10}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {session.distance}m
-                            </p>
+                          <div className="flex items-center space-x-4">
+                            <div className="text-right">
+                              <p className="text-lg font-medium text-gray-900">
+                                {session.total_score}/{session.current_round * 10}
+                              </p>
+                              <p className="text-sm text-gray-500">
+                                {session.distance}m
+                              </p>
+                            </div>
+                            <button
+                              onClick={(e) => handleDeleteSession(e, session)}
+                              className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-700"
+                              title="세션 삭제"
+                            >
+                              <Trash2 size={18} />
+                            </button>
                           </div>
                         </div>
                       </button>

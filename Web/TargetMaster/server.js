@@ -4,9 +4,14 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pkg from 'pg';
 const { Pool } = pkg;
+import dotenv from 'dotenv';
+
+// 환경 변수 로드
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key_here';
 
 // PostgreSQL 연결 설정
 const pool = new Pool({
@@ -301,9 +306,25 @@ app.use(express.urlencoded({ extended: true }));
 
 // JWT 토큰 생성
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, 'your_jwt_secret_key_here', {
+  return jwt.sign({ userId }, JWT_SECRET, {
     expiresIn: '24h'
   });
+};
+
+// JWT 검증 유틸리티 (만료 및 기타 오류를 401로 표준화)
+const verifyTokenOrThrow = (token) => {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (error) {
+    if (error?.name === 'TokenExpiredError') {
+      const err = new Error('토큰이 만료되었습니다.');
+      err.statusCode = 401;
+      throw err;
+    }
+    const err = new Error('유효하지 않은 토큰입니다.');
+    err.statusCode = 401;
+    throw err;
+  }
 };
 
 // 회원가입 API
@@ -502,7 +523,7 @@ app.get('/api/auth/verify', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const decoded = verifyTokenOrThrow(token);
     const result = await pool.query('SELECT * FROM users WHERE user_id = $1', [decoded.userId]);
 
     if (result.rows.length === 0) {
@@ -529,10 +550,11 @@ app.get('/api/auth/verify', async (req, res) => {
       }
     });
   } catch (error) {
+    const status = error.statusCode || 401;
     console.error('토큰 검증 오류:', error);
-    res.status(401).json({
+    res.status(status).json({
       success: false,
-      message: '유효하지 않은 토큰입니다.'
+      message: error.message || '유효하지 않은 토큰입니다.'
     });
   }
 });
@@ -549,7 +571,7 @@ app.get('/api/user/profile', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const decoded = verifyTokenOrThrow(token);
     const result = await pool.query('SELECT * FROM users WHERE user_id = $1', [decoded.userId]);
 
     if (result.rows.length === 0) {
@@ -575,10 +597,11 @@ app.get('/api/user/profile', async (req, res) => {
       }
     });
   } catch (error) {
+    const status = error.statusCode || 500;
     console.error('사용자 프로필 조회 오류:', error);
-    res.status(500).json({
+    res.status(status).json({
       success: false,
-      message: '서버 오류가 발생했습니다.'
+      message: error.message || '서버 오류가 발생했습니다.'
     });
   }
 });
@@ -595,7 +618,7 @@ app.post('/api/training/session', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const decoded = verifyTokenOrThrow(token);
     const userResult = await pool.query('SELECT * FROM users WHERE user_id = $1', [decoded.userId]);
 
     if (userResult.rows.length === 0) {
@@ -644,10 +667,11 @@ app.post('/api/training/session', async (req, res) => {
       }
     });
   } catch (error) {
+    const status = error.statusCode || 500;
     console.error('훈련 세션 생성 오류:', error);
-    res.status(500).json({
+    res.status(status).json({
       success: false,
-      message: '서버 오류가 발생했습니다.'
+      message: error.message || '서버 오류가 발생했습니다.'
     });
   }
 });
@@ -664,7 +688,7 @@ app.get('/api/training/session/:id', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const decoded = verifyTokenOrThrow(token);
     const sessionId = req.params.id;
 
     const result = await pool.query(
@@ -699,10 +723,11 @@ app.get('/api/training/session/:id', async (req, res) => {
       }
     });
   } catch (error) {
+    const status = error.statusCode || 500;
     console.error('훈련 세션 조회 오류:', error);
-    res.status(500).json({
+    res.status(status).json({
       success: false,
-      message: '서버 오류가 발생했습니다.'
+      message: error.message || '서버 오류가 발생했습니다.'
     });
   }
 });
@@ -719,7 +744,7 @@ app.post('/api/training/score', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const decoded = verifyTokenOrThrow(token);
     const { training_id, round_number, score, arrow_number } = req.body;
 
     // 필수 필드 검증
@@ -777,10 +802,11 @@ app.post('/api/training/score', async (req, res) => {
       }
     });
   } catch (error) {
+    const status = error.statusCode || 500;
     console.error('점수 기록 오류:', error);
-    res.status(500).json({
+    res.status(status).json({
       success: false,
-      message: '서버 오류가 발생했습니다.'
+      message: error.message || '서버 오류가 발생했습니다.'
     });
   }
 });
@@ -796,7 +822,7 @@ app.delete('/api/training/scores/:trainingId/:roundNumber/:arrowNumber', async (
       });
     }
 
-    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const decoded = verifyTokenOrThrow(token);
     const { trainingId, roundNumber, arrowNumber } = req.params;
 
     // 훈련 세션 소유권 확인
@@ -839,10 +865,11 @@ app.delete('/api/training/scores/:trainingId/:roundNumber/:arrowNumber', async (
       }
     });
   } catch (error) {
+    const status = error.statusCode || 500;
     console.error('점수 삭제 오류:', error);
-    res.status(500).json({
+    res.status(status).json({
       success: false,
-      message: '점수 삭제 중 오류가 발생했습니다.'
+      message: error.message || '점수 삭제 중 오류가 발생했습니다.'
     });
   }
 });
@@ -853,6 +880,41 @@ app.get('/', (req, res) => {
     message: 'TargetMaster API 서버가 실행 중입니다.',
     version: '1.0.0'
   });
+});
+
+// 훈련 세션 삭제 API
+app.delete('/api/training/session/:id', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ success: false, message: '토큰이 제공되지 않았습니다.' });
+    }
+
+    const decoded = verifyTokenOrThrow(token);
+    const sessionId = req.params.id;
+
+    // 세션이 사용자 소유인지 확인
+    const sessionResult = await pool.query(
+      'SELECT id FROM training WHERE id = $1 AND user_id = (SELECT id FROM users WHERE user_id = $2)',
+      [sessionId, decoded.userId]
+    );
+
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: '훈련 세션을 찾을 수 없습니다.' });
+    }
+
+    // 점수 먼저 삭제 (외래키 ON DELETE CASCADE가 있지만 안전하게 명시)
+    await pool.query('DELETE FROM training_scores WHERE training_id = $1', [sessionId]);
+
+    // 세션 삭제
+    await pool.query('DELETE FROM training WHERE id = $1', [sessionId]);
+
+    res.json({ success: true, message: '훈련 세션이 삭제되었습니다.' });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    console.error('훈련 세션 삭제 오류:', error);
+    res.status(status).json({ success: false, message: error.message || '훈련 세션 삭제 중 오류가 발생했습니다.' });
+  }
 });
 
 // 데이터베이스 초기화 및 서버 시작
@@ -945,7 +1007,7 @@ app.get('/api/training/sessions', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const decoded = verifyTokenOrThrow(token);
 
     // 사용자의 모든 훈련 세션 조회 (최신순)
     const result = await pool.query(
@@ -972,10 +1034,11 @@ app.get('/api/training/sessions', async (req, res) => {
       }
     });
   } catch (error) {
+    const status = error.statusCode || 500;
     console.error('훈련 세션 목록 조회 오류:', error);
-    res.status(500).json({
+    res.status(status).json({
       success: false,
-      message: '훈련 세션 목록 조회 중 오류가 발생했습니다.'
+      message: error.message || '훈련 세션 목록 조회 중 오류가 발생했습니다.'
     });
   }
 });
@@ -992,7 +1055,7 @@ app.get('/api/training/scores/:trainingId/:roundNumber', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, 'your_jwt_secret_key_here');
+    const decoded = verifyTokenOrThrow(token);
     const { trainingId, roundNumber } = req.params;
 
     // 훈련 세션 소유권 확인
@@ -1021,10 +1084,11 @@ app.get('/api/training/scores/:trainingId/:roundNumber', async (req, res) => {
       }
     });
   } catch (error) {
+    const status = error.statusCode || 500;
     console.error('점수 조회 오류:', error);
-    res.status(500).json({
+    res.status(status).json({
       success: false,
-      message: '점수 조회 중 오류가 발생했습니다.'
+      message: error.message || '점수 조회 중 오류가 발생했습니다.'
     });
   }
 });

@@ -21,8 +21,6 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
-console.log('API Base URL:', API_BASE_URL);
-
 export interface ApiResponse<T = any> {
   success: boolean;
   message: string;
@@ -67,9 +65,6 @@ const apiRequest = async <T>(
 ): Promise<ApiResponse<T>> => {
   const url = `${API_BASE_URL}${endpoint}`;
   
-  console.log('API 요청 URL:', url);
-  console.log('API 요청 옵션:', options);
-  
   const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -88,20 +83,23 @@ const apiRequest = async <T>(
   };
 
   try {
-    console.log('fetch 요청 시작:', url);
     const response = await fetch(url, config);
-    console.log('응답 상태:', response.status, response.statusText);
-    const data = await response.json();
-    console.log('응답 데이터:', data);
+    let data: ApiResponse<T>;
+    try {
+      data = await response.json();
+    } catch (_) {
+      // JSON이 아닌 응답일 경우 기본 에러 메시지 생성
+      data = { success: false, message: response.statusText || 'API 응답 파싱 실패' } as ApiResponse<T>;
+    }
     
     if (!response.ok) {
-      throw new Error(data.message || 'API 요청 실패');
+      // 401 등 에러 메시지 정리
+      const message = data?.message || response.statusText || 'API 요청 실패';
+      throw new Error(message);
     }
     
     return data;
   } catch (error) {
-    console.error('API 요청 오류:', error);
-    console.error('오류 상세:', error instanceof Error ? error.message : String(error));
     throw error;
   }
 };
@@ -175,6 +173,11 @@ export const trainingAPI = {
   },
   deleteScore: async (trainingId: number, roundNumber: number, arrowNumber: number): Promise<ApiResponse<{ total_score: number }>> => {
     return apiRequest<{ total_score: number }>(`/training/scores/${trainingId}/${roundNumber}/${arrowNumber}`, {
+      method: 'DELETE',
+    });
+  },
+  deleteSession: async (sessionId: number): Promise<ApiResponse> => {
+    return apiRequest(`/training/session/${sessionId}`, {
       method: 'DELETE',
     });
   },

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import TrainingSession from './TrainingSession'
 import TargetScoreInput from './TargetScoreInput'
 import { trainingAPI } from '../utils/api'
+import { Trash2 } from 'lucide-react'
 
 
 
@@ -124,6 +125,25 @@ export default function ScoreInput() {
     setCurrentView('recording')
   }
 
+  const handleDeleteSession = async (e: React.MouseEvent, session: TrainingSession) => {
+    e.stopPropagation()
+    const confirmed = window.confirm(`정말로 "${session.session_name}" 세션을 삭제하시겠습니까? (복구 불가)`)
+    if (!confirmed) return
+    try {
+      const res = await trainingAPI.deleteSession(session.id)
+      if (res.success) {
+        const newList = dbSessions.filter(s => s.id !== session.id)
+        setDbSessions(newList)
+        alert('세션이 삭제되었습니다.')
+      } else {
+        alert(res.message || '세션 삭제에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('세션 삭제 오류:', error)
+      alert('세션 삭제 중 오류가 발생했습니다.')
+    }
+  }
+
   const dbMonthGroups = groupDbSessionsByMonth(dbSessions)
 
   // 훈련 세션 생성 화면
@@ -220,10 +240,19 @@ export default function ScoreInput() {
                                  {session.session_name}
                                </p>
                              </div>
-                             <div className="text-right">
-                               <p className="text-base font-semibold text-gray-900">
-                                 {session.total_score}/{session.current_round * (session.arrow_count || 6) * 10}
-                               </p>
+                             <div className="flex items-center space-x-4">
+                               <div className="text-right">
+                                 <p className="text-base font-semibold text-gray-900">
+                                   {session.total_score}/{session.current_round * (session.arrow_count || 6) * 10}
+                                 </p>
+                               </div>
+                               <button
+                                 onClick={(e) => handleDeleteSession(e, session)}
+                                 className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-700"
+                                 title="세션 삭제"
+                               >
+                                 <Trash2 size={18} />
+                               </button>
                              </div>
                            </div>
                          </button>
