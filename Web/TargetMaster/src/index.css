@@ -874,6 +874,15 @@ body {
   background-clip: text;
 }
 
+/* Gradient hover animation utility */
+.gradient-animate {
+  background-size: 200% 200%;
+  transition: background-position 0.4s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.gradient-animate:hover {
+  background-position: 100% 0;
+}
+
 /* Icon containers */
 .icon-container {
   width: 64px;

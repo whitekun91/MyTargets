@@ -127,7 +127,7 @@ export default function TrainingRecording({ session, onBack }: TrainingRecording
             <div className="flex justify-center space-x-4">
               <button
                 onClick={onBack}
-                className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-12 py-3 rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center space-x-2"
+                className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-12 py-3 rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center space-x-2 gradient-animate"
                 style={{ border: 'none', outline: 'none' }}
               >
                 <ArrowLeft size={20} />

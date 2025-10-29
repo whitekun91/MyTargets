@@ -162,7 +162,6 @@ export default function ScoreInput() {
       <TargetScoreInput
         session={currentSession}
         arrowCount={currentSession.arrow_count || 6}
-        onBack={handleBackToSession}
         onRefresh={refreshSessions}
       />
     )

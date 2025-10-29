@@ -106,11 +106,11 @@ function TargetIcon({ targetType }: { targetType: string }) {
   // For WA Vertical 3 Spot, render 3 targets vertically
   if (targetType === 'wa_vertical_3_spot') {
     const spotPositions = [
-      { cx: 0.5, cy: 0.16 }, // Top spot
+      { cx: 0.5, cy: 0.25 }, // Top spot (closer to center)
       { cx: 0.5, cy: 0.5 },  // Middle spot
-      { cx: 0.5, cy: 0.84 }, // Bottom spot
+      { cx: 0.5, cy: 0.75 }, // Bottom spot (closer to center)
     ]
-    const spotRadius = 0.16 // faceRadius = 0.32f, scaled by 0.5
+    const spotRadius = 0.22 // larger spots for visibility
 
     return (
       <svg width={size} height={size} viewBox="0 0 1 1" className="flex-shrink-0 mr-3">

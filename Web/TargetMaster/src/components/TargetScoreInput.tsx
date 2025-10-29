@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, X } from 'lucide-react'
 import { trainingAPI } from '../utils/api'
 
@@ -17,7 +18,6 @@ interface TrainingSession {
 interface TargetScoreInputProps {
   session: TrainingSession
   arrowCount: number
-  onBack: () => void
   onRefresh?: () => void
 }
 
@@ -29,19 +29,21 @@ interface Shot {
   scoringRing: number
 }
 
-export default function TargetScoreInput({ session, arrowCount, onBack, onRefresh }: TargetScoreInputProps) {
+export default function TargetScoreInput({ session, arrowCount, onRefresh }: TargetScoreInputProps) {
   const [shots, setShots] = useState<Shot[]>([])
   const [currentShot, setCurrentShot] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [isComplete, setIsComplete] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const navigate = useNavigate()
+  const [currentRound, setCurrentRound] = useState<number>(session.current_round)
 
   // 기존 점수 불러오기
   useEffect(() => {
     const loadExistingScores = async () => {
       try {
         setIsLoading(true)
-        const response = await trainingAPI.getScores(session.id, session.current_round)
+        const response = await trainingAPI.getScores(session.id, currentRound)
         
         if (response.success && response.data) {
           const existingShots: Shot[] = response.data.scores.map((score: any) => ({
@@ -64,7 +66,7 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
     }
 
     loadExistingScores()
-  }, [session.id, session.current_round])
+  }, [session.id, currentRound])
 
 
   // 안드로이드 앱의 WA Full 타겟 색상 정의
@@ -154,7 +156,56 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
         }
       
       case 'wa_vertical_3_spot':
-      case 'wa_horizontal_3_spot':
+      case 'wa_horizontal_3_spot': {
+        // 3-스팟: 각 스팟 중심과 반지름을 정의하고, 가장 가까운 스팟 기준으로 6링 로직 적용
+        const canvasSize = 800
+        const centerX = canvasSize / 2
+        const centerY = canvasSize / 2
+        const fullRadius = canvasSize / 2
+
+        // 스팟 위치 (캔버스 비율 기준), TargetSelector와 일치
+        const spotCenters = session.target_type === 'wa_vertical_3_spot'
+          ? [
+              { x: centerX, y: canvasSize * 0.25 },
+              { x: centerX, y: centerY },
+              { x: centerX, y: canvasSize * 0.75 },
+            ]
+          : [
+              { x: canvasSize * 0.25, y: centerY },
+              { x: centerX, y: centerY },
+              { x: canvasSize * 0.75, y: centerY },
+            ]
+
+        // 스팟 반지름 (전체 반지름 대비 비율 0.22로 확대)
+        const spotRadius = fullRadius * 0.22
+
+        // 가장 가까운 스팟 중심까지의 거리 계산
+        let minDistance = Infinity
+        for (const c of spotCenters) {
+          const d = Math.hypot(x - c.x, y - c.y)
+          if (d < minDistance) minDistance = d
+        }
+
+        const normalized = minDistance / spotRadius
+
+        // WA 6 Ring 임계값 사용 (X~5점)
+        if (normalized <= 0.084) {
+          return { score: 10, scoringRing: 0 }
+        } else if (normalized <= 0.166) {
+          return { score: 10, scoringRing: 1 }
+        } else if (normalized <= 0.334) {
+          return { score: 9, scoringRing: 2 }
+        } else if (normalized <= 0.5) {
+          return { score: 8, scoringRing: 3 }
+        } else if (normalized <= 0.666) {
+          return { score: 7, scoringRing: 4 }
+        } else if (normalized <= 0.834) {
+          return { score: 6, scoringRing: 5 }
+        } else if (normalized <= 1.0) {
+          return { score: 5, scoringRing: 6 }
+        }
+        return { score: 0, scoringRing: -1 }
+      }
       case 'wa_vertical_5_spot':
       case 'wa_horizontal_5_spot':
       case 'wa_vertical_1_spot':
@@ -167,28 +218,28 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
         } else if (normalizedDistance <= 0.1) {
           console.log('🎯 10점 - 임계값: 0.1 (10%)')
           return { score: 10, scoringRing: 1 } // 2번 - 10점 (10%) - 10점 라인
-        } else if (normalizedDistance <= 0.2) {
-          console.log('🎯 9점 - 임계값: 0.2 (20%)')
+        } else if (normalizedDistance <= 0.21) {
+          console.log('🎯 9점 - 임계값: 0.21 (21%)')
           return { score: 9, scoringRing: 2 } // 3번 - 9점 (20%) - 9점 라인
-        } else if (normalizedDistance <= 0.3) {
+        } else if (normalizedDistance <= 0.31) {
           console.log('🎯 8점 - 임계값: 0.3 (30%)')
           return { score: 8, scoringRing: 3 } // 4번 - 8점 (30%) - 8점 라인
-        } else if (normalizedDistance <= 0.4) {
-          console.log('🎯 7점 - 임계값: 0.4 (40%)')
+        } else if (normalizedDistance <= 0.415) {
+          console.log('🎯 7점 - 임계값: 0.415 (41.5%)')
           return { score: 7, scoringRing: 4 } // 5번 - 7점 (40%) - 7점 라인
-        } else if (normalizedDistance <= 0.5) {
+        } else if (normalizedDistance <= 0.51) {
           console.log('🎯 6점 - 임계값: 0.5 (50%)')
           return { score: 6, scoringRing: 5 } // 6번 - 6점 (50%) - 6점 라인
-        } else if (normalizedDistance <= 0.6) {
+        } else if (normalizedDistance <= 0.61) {
           console.log('🎯 5점 - 임계값: 0.6 (60%)')
           return { score: 5, scoringRing: 6 } // 7번 - 5점 (60%) - 5점 라인
-        } else if (normalizedDistance <= 0.7) {
+        } else if (normalizedDistance <= 0.71) {
           console.log('🎯 4점 - 임계값: 0.7 (70%)')
           return { score: 4, scoringRing: 7 } // 8번 - 4점 (70%) - 4점 라인
-        } else if (normalizedDistance <= 0.8) {
+        } else if (normalizedDistance <= 0.81) {
           console.log('🎯 3점 - 임계값: 0.8 (80%)')
           return { score: 3, scoringRing: 8 } // 9번 - 3점 (80%) - 3점 라인
-        } else if (normalizedDistance <= 0.9) {
+        } else if (normalizedDistance <= 0.91) {
           console.log('🎯 2점 - 임계값: 0.9 (90%)')
           return { score: 2, scoringRing: 9 } // 10번 - 2점 (90%) - 2점 라인
         } else if (normalizedDistance <= 1.0) {
@@ -289,7 +340,7 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
       for (const shot of shotsToProcess) {
         await trainingAPI.recordScore({
           training_id: session.id,
-          round_number: session.current_round,
+          round_number: currentRound,
           score: shot.score,
           arrow_number: shot.id
         })
@@ -297,7 +348,6 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
       
       alert('점수가 저장되었습니다!')
       onRefresh?.() // 세션 목록 새로고침
-      onBack()
     } catch (error) {
       console.error('점수 저장 오류:', error)
       alert('점수 저장 중 오류가 발생했습니다.')
@@ -333,15 +383,31 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
     try {
       // 현재 End의 점수를 DB에 저장
       await handleSaveScores(shots)
+      // 방금 완료한 End의 R 값 계산 및 저장 (localStorage)
+      try {
+        const completedRound = currentRound
+        const resp = await trainingAPI.getScores(session.id, completedRound)
+        if (resp.success && resp.data) {
+          const endTotal = resp.data.scores.reduce((sum: number, s: any) => sum + (s.score || 0), 0)
+          const denominator = arrowCount * completedRound * 10
+          const endR = denominator > 0 ? endTotal / denominator : 0
+          const key = `endR:${session.id}:${completedRound}`
+          localStorage.setItem(key, JSON.stringify({ r: endR, total: endTotal, arrows: arrowCount, round: completedRound }))
+          console.log('✅ End R 저장:', { key, endR, endTotal, denominator })
+        }
+      } catch (e) {
+        console.warn('End R 계산/저장 실패:', e)
+      }
       
       // 다음 End로 이동 (라운드 증가)
-      const nextRound = session.current_round + 1
+      const nextRound = currentRound + 1
       console.log('➡️ 다음 라운드로 이동:', nextRound)
       
       // 화살 목록 초기화
       setShots([])
       setCurrentShot(0)
       setIsComplete(false)
+      setCurrentRound(nextRound)
       
       // 세션 목록 새로고침
       onRefresh?.()
@@ -399,7 +465,72 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
         break
 
       case 'wa_vertical_3_spot':
-      case 'wa_horizontal_3_spot':
+      case 'wa_horizontal_3_spot': {
+        // 3-스팟 렌더링: WA 6 Ring 스타일의 작은 과녁 3개
+        // 기본 캔버스 기준 중심/반지름
+        const centerX = 400
+        const centerY = 400
+        const radius = 400
+
+        const spotCenters = session.target_type === 'wa_vertical_3_spot'
+          ? [
+              { x: centerX, y: 800 * 0.25 },
+              { x: centerX, y: centerY },
+              { x: centerX, y: 800 * 0.75 },
+            ]
+          : [
+              { x: 800 * 0.25, y: centerY },
+              { x: centerX, y: centerY },
+              { x: 800 * 0.75, y: centerY },
+            ]
+
+        const wa6 = [
+          { r: 0.084, c: WA_COLORS.LEMON_YELLOW },
+          { r: 0.166, c: WA_COLORS.LEMON_YELLOW },
+          { r: 0.334, c: WA_COLORS.LEMON_YELLOW },
+          { r: 0.5,   c: WA_COLORS.FLAMINGO_RED },
+          { r: 0.666, c: WA_COLORS.FLAMINGO_RED },
+          { r: 0.834, c: WA_COLORS.CERULEAN_BLUE },
+          { r: 1.0,   c: WA_COLORS.CERULEAN_BLUE },
+        ]
+
+        const spotRadius = radius * 0.22
+
+        // 배경 초기화는 공통으로 되어 있으니, 여기서 직접 그리기
+        // 기존 zones 방식 대신 직접 원을 그림
+        // draw spots
+        spotCenters.forEach((c) => {
+          for (let i = wa6.length - 1; i >= 0; i--) {
+            const rr = spotRadius * wa6[i].r
+            ctx.beginPath()
+            ctx.arc(c.x, c.y, rr, 0, 2 * Math.PI)
+            ctx.fillStyle = wa6[i].c
+            ctx.fill()
+            ctx.strokeStyle = WA_COLORS.DARK_GRAY
+            ctx.lineWidth = 2
+            ctx.stroke()
+          }
+        })
+
+        // 3-스팟 위에 화살 표시 (공통 루프를 타지 않으므로 여기서 직접 표시)
+        shots.forEach((shot, index) => {
+          const x = shot.x
+          const y = shot.y
+          ctx.beginPath()
+          ctx.arc(x, y, 8, 0, 2 * Math.PI)
+          ctx.fillStyle = '#FF0000'
+          ctx.fill()
+          ctx.strokeStyle = '#000'
+          ctx.lineWidth = 2
+          ctx.stroke()
+          ctx.fillStyle = '#000'
+          ctx.font = 'bold 14px Arial'
+          ctx.textAlign = 'center'
+          ctx.fillText((index + 1).toString(), x, y + 5)
+        })
+
+        return
+      }
       case 'wa_vertical_5_spot':
       case 'wa_horizontal_5_spot':
       case 'wa_vertical_1_spot':
@@ -409,14 +540,14 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
         zones = [
           { radius: 0.05, color: WA_COLORS.LEMON_YELLOW, stroke: WA_COLORS.DARK_GRAY }, // 10점 (중앙)
           { radius: 0.1, color: WA_COLORS.LEMON_YELLOW, stroke: WA_COLORS.DARK_GRAY },  // 10점
-          { radius: 0.2, color: WA_COLORS.LEMON_YELLOW, stroke: WA_COLORS.DARK_GRAY },  // 9점
-          { radius: 0.3, color: WA_COLORS.FLAMINGO_RED, stroke: WA_COLORS.DARK_GRAY },  // 8점
-          { radius: 0.4, color: WA_COLORS.FLAMINGO_RED, stroke: WA_COLORS.DARK_GRAY },  // 7점
-          { radius: 0.5, color: WA_COLORS.CERULEAN_BLUE, stroke: WA_COLORS.DARK_GRAY }, // 6점
-          { radius: 0.6, color: WA_COLORS.CERULEAN_BLUE, stroke: WA_COLORS.DARK_GRAY }, // 5점
-          { radius: 0.7, color: WA_COLORS.BLACK, stroke: WA_COLORS.DARK_GRAY },         // 4점
-          { radius: 0.8, color: WA_COLORS.BLACK, stroke: WA_COLORS.DARK_GRAY },         // 3점
-          { radius: 0.9, color: WA_COLORS.WHITE, stroke: WA_COLORS.DARK_GRAY },         // 2점
+          { radius: 0.21, color: WA_COLORS.LEMON_YELLOW, stroke: WA_COLORS.DARK_GRAY },  // 9점
+          { radius: 0.31, color: WA_COLORS.FLAMINGO_RED, stroke: WA_COLORS.DARK_GRAY },  // 8점
+          { radius: 0.415, color: WA_COLORS.FLAMINGO_RED, stroke: WA_COLORS.DARK_GRAY },  // 7점
+          { radius: 0.51, color: WA_COLORS.CERULEAN_BLUE, stroke: WA_COLORS.DARK_GRAY }, // 6점
+          { radius: 0.61, color: WA_COLORS.CERULEAN_BLUE, stroke: WA_COLORS.DARK_GRAY }, // 5점
+          { radius: 0.71, color: WA_COLORS.BLACK, stroke: WA_COLORS.DARK_GRAY },         // 4점
+          { radius: 0.81, color: WA_COLORS.BLACK, stroke: WA_COLORS.DARK_GRAY },         // 3점
+          { radius: 0.91, color: WA_COLORS.WHITE, stroke: WA_COLORS.DARK_GRAY },         // 2점
           { radius: 1.0, color: WA_COLORS.WHITE, stroke: WA_COLORS.DARK_GRAY }          // 1점
         ]
         break
@@ -457,7 +588,7 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
       ctx.fillText((index + 1).toString(), x, y + 5)
     })
 
-  }, [shots, session.target_type])
+  }, [shots, session.target_type, currentRound])
 
 
   // 점수에 따른 배경색 반환 함수 (X, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 구성)
@@ -550,15 +681,21 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
 
       {/* 메인 콘텐츠 */}
       <div className="p-4">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6">
           {/* 좌측: 점수 표시 */}
           <div className="bg-white rounded-lg p-6">
             {/* 뒤로 가기 버튼과 삭제 버튼 */}
             <div className="flex items-center justify-between mb-6">
               <button
-                onClick={onBack}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                style={{ border: 'none', outline: 'none' }}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  console.log('뒤로 가기 버튼 클릭됨')
+                  navigate('/trainings')
+                }}
+                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg gradient-animate relative z-10 cursor-pointer"
+                style={{ border: 'none', outline: 'none', pointerEvents: 'auto' }}
               >
                 <ArrowLeft size={18} />
                 <span className="font-medium">뒤로 가기</span>
@@ -592,7 +729,7 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
                 {/* End 헤더 */}
                 <div className="bg-gray-50 border-b border-gray-300 px-4 py-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-lg font-bold text-gray-800">End {session.current_round}</span>
+                    <span className="text-lg font-bold text-gray-800">End {currentRound}</span>
                     <span className="text-lg font-bold text-gray-800">
                       {shots.reduce((sum, shot) => sum + shot.score, 0)}/{arrowCount * 10}
                     </span>
@@ -605,7 +742,11 @@ export default function TargetScoreInput({ session, arrowCount, onBack, onRefres
                     {Array.from({ length: arrowCount }, (_, index) => {
                       const shot = shots[index]
                       const colorInfo = shot ? (shot.score === 0 ? { className: 'bg-white', style: { backgroundColor: '#ffffff' } } : getScoreBackgroundColor(shot.score, shot.scoringRing)) : { className: 'bg-gray-50', style: { backgroundColor: '#f9fafb' } }
-                      const textColor = shot ? (shot.score === 0 ? 'text-black' : 'text-white') : 'text-gray-400'
+                      const textColor = shot
+                        ? (shot.score === 0 || shot.score === 1 || shot.score === 2)
+                          ? 'text-black'
+                          : 'text-white'
+                        : 'text-gray-400'
                       const displayText = shot ? (shot.score === 0 ? 'M' : (shot.score === 10 && shot.scoringRing === 0 ? 'X' : shot.score)) : '-'
                       
                       
