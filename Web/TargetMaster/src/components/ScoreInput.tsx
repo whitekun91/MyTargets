@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import TrainingSession from './TrainingSession'
 import TargetScoreInput from './TargetScoreInput'
+import SessionDetail from './SessionDetail'
 import { trainingAPI } from '../utils/api'
 import { Trash2 } from 'lucide-react'
 
@@ -17,14 +18,17 @@ interface TrainingSession {
   arrow_count?: number
   current_round: number
   total_score: number
+  actual_end_count?: number
+  max_score?: number
 }
 
 export default function ScoreInput() {
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
-  const [currentView, setCurrentView] = useState<'list' | 'session' | 'recording'>('list')
+  const [currentView, setCurrentView] = useState<'list' | 'session' | 'detail' | 'recording'>('list')
   const [currentSession, setCurrentSession] = useState<TrainingSession | null>(null)
   const [dbSessions, setDbSessions] = useState<TrainingSession[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [currentRoundNumber, setCurrentRoundNumber] = useState<number>(1)
 
   // DB에서 훈련 세션 가져오기
   useEffect(() => {
@@ -34,11 +38,57 @@ export default function ScoreInput() {
         const response = await trainingAPI.getTrainingSessions()
         
         if (response.success && response.data) {
-          setDbSessions(response.data.sessions)
+          // 각 세션의 실제 엔드 수와 최대 점수 계산
+          const sessionsWithStats = await Promise.all(
+            response.data.sessions.map(async (session: TrainingSession) => {
+              try {
+                let endCount = 0
+                let totalMaxScore = 0
+                
+                // console.log(`📊 세션 ${session.id} (${session.session_name}) 점수 계산 시작...`)
+                
+                // 최대 100개 라운드까지 확인
+                for (let round = 1; round <= 100; round++) {
+                  try {
+                    const roundResponse = await trainingAPI.getScores(session.id, round)
+                    if (roundResponse.success && roundResponse.data && roundResponse.data.scores && roundResponse.data.scores.length > 0) {
+                      endCount++
+                      const roundMaxScore = roundResponse.data.scores.length * 10
+                      totalMaxScore += roundMaxScore
+                      // console.log(`  ✅ 라운드 ${round}: ${roundResponse.data.scores.length}발 = ${roundMaxScore}점`)
+                    } else {
+                      // 연속 5개 라운드에 데이터가 없으면 중단
+                      if (endCount > 0 && round > endCount + 5) {
+                        // console.log(`  ⏹️ 라운드 ${round}에서 중단 (연속 5개 데이터 없음)`)
+                        break
+                      }
+                    }
+                  } catch {
+                    if (endCount > 0 && round > endCount + 5) {
+                      break
+                    }
+                  }
+                }
+                
+                // console.log(`📊 세션 ${session.id} 최종: ${endCount}개 엔드, 최대 ${totalMaxScore}점`)
+                
+                return {
+                  ...session,
+                  actual_end_count: endCount,
+                  max_score: totalMaxScore
+                }
+              } catch (error) {
+                console.error(`❌ 세션 ${session.id} 계산 오류:`, error)
+                return session
+              }
+            })
+          )
+          
+          setDbSessions(sessionsWithStats)
           
           // 첫 번째 월을 기본으로 확장
-          if (response.data.sessions.length > 0) {
-            const firstSession = response.data.sessions[0]
+          if (sessionsWithStats.length > 0) {
+            const firstSession = sessionsWithStats[0]
             const date = new Date(firstSession.date)
             const monthKey = `${date.getFullYear()}년 ${date.getMonth() + 1}월`
             setExpandedMonths(new Set([monthKey]))
@@ -96,6 +146,7 @@ export default function ScoreInput() {
 
   const handleStartTraining = (session: TrainingSession) => {
     setCurrentSession(session)
+    setCurrentRoundNumber(1) // 새 훈련은 항상 1라운드부터 시작
     setCurrentView('recording')
   }
 
@@ -113,7 +164,44 @@ export default function ScoreInput() {
     try {
       const response = await trainingAPI.getTrainingSessions()
       if (response.success && response.data) {
-        setDbSessions(response.data.sessions)
+        // 각 세션의 실제 엔드 수와 최대 점수 계산
+        const sessionsWithStats = await Promise.all(
+          response.data.sessions.map(async (session: TrainingSession) => {
+            try {
+              let endCount = 0
+              let totalMaxScore = 0
+              
+              // 최대 100개 라운드까지 확인
+              for (let round = 1; round <= 100; round++) {
+                try {
+                  const roundResponse = await trainingAPI.getScores(session.id, round)
+                  if (roundResponse.success && roundResponse.data && roundResponse.data.scores && roundResponse.data.scores.length > 0) {
+                    endCount++
+                    totalMaxScore += roundResponse.data.scores.length * 10
+                  } else {
+                    if (endCount > 0 && round > endCount + 5) {
+                      break
+                    }
+                  }
+                } catch {
+                  if (endCount > 0 && round > endCount + 5) {
+                    break
+                  }
+                }
+              }
+              
+              return {
+                ...session,
+                actual_end_count: endCount,
+                max_score: totalMaxScore
+              }
+            } catch (error) {
+              return session
+            }
+          })
+        )
+        
+        setDbSessions(sessionsWithStats)
       }
     } catch (error) {
       console.error('세션 목록 새로고침 오류:', error)
@@ -122,7 +210,16 @@ export default function ScoreInput() {
 
   const handleSelectSession = (session: TrainingSession) => {
     setCurrentSession(session)
+    setCurrentView('detail')
+  }
+
+  const handleStartRound = (roundNumber: number) => {
+    setCurrentRoundNumber(roundNumber)
     setCurrentView('recording')
+  }
+
+  const handleBackToDetail = () => {
+    setCurrentView('detail')
   }
 
   const handleDeleteSession = async (e: React.MouseEvent, session: TrainingSession) => {
@@ -156,13 +253,25 @@ export default function ScoreInput() {
     )
   }
 
+  // 세션 상세 화면
+  if (currentView === 'detail' && currentSession) {
+    return (
+      <SessionDetail
+        session={currentSession}
+        onBack={handleBackToList}
+        onStartRound={handleStartRound}
+      />
+    )
+  }
+
   // 훈련 기록 화면
   if (currentView === 'recording' && currentSession) {
     return (
       <TargetScoreInput
-        session={currentSession}
+        session={{...currentSession, current_round: currentRoundNumber}}
         arrowCount={currentSession.arrow_count || 6}
         onRefresh={refreshSessions}
+        onBack={handleBackToDetail}
       />
     )
   }
@@ -220,11 +329,10 @@ export default function ScoreInput() {
                    {isExpanded && (
                      <div>
                        {group.sessions.map((session) => (
-                         <button
+                         <div
                            key={session.id}
                            onClick={() => handleSelectSession(session)}
-                           className="w-full px-5 py-3 bg-white hover:bg-gray-50 transition-colors text-left"
-                           style={{ border: 'none', outline: 'none' }}
+                           className="w-full px-5 py-3 bg-white hover:bg-gray-50 transition-colors text-left cursor-pointer"
                          >
                            <div className="flex items-center justify-between">
                              <div className="flex-1">
@@ -242,7 +350,7 @@ export default function ScoreInput() {
                              <div className="flex items-center space-x-4">
                                <div className="text-right">
                                  <p className="text-base font-semibold text-gray-900">
-                                   {session.total_score}/{session.current_round * (session.arrow_count || 6) * 10}
+                                   {session.total_score} / {session.max_score || 0}
                                  </p>
                                </div>
                                <button
@@ -254,7 +362,7 @@ export default function ScoreInput() {
                                </button>
                              </div>
                            </div>
-                         </button>
+                         </div>
                        ))}
                      </div>
                    )}

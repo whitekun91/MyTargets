@@ -19,6 +19,7 @@ interface TargetScoreInputProps {
   session: TrainingSession
   arrowCount: number
   onRefresh?: () => void
+  onBack?: () => void
 }
 
 interface Shot {
@@ -29,7 +30,17 @@ interface Shot {
   scoringRing: number
 }
 
-export default function TargetScoreInput({ session, arrowCount, onRefresh }: TargetScoreInputProps) {
+// 안드로이드 앱의 WA Full 타겟 색상 정의
+const WA_COLORS = {
+  LEMON_YELLOW: '#FFE135',    // -0x914f1
+  FLAMINGO_RED: '#FC4C4E',    // -0x10b1b4
+  CERULEAN_BLUE: '#00B4D8',   // -0xff5211
+  BLACK: '#000000',           // -0x1000000
+  WHITE: '#FFFFFF',           // -0x1
+  DARK_GRAY: '#2D2D2D'        // -0xdde0e1
+}
+
+export default function TargetScoreInput({ session, arrowCount, onRefresh, onBack }: TargetScoreInputProps) {
   const [shots, setShots] = useState<Shot[]>([])
   const [currentShot, setCurrentShot] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
@@ -37,26 +48,53 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const navigate = useNavigate()
   const [currentRound, setCurrentRound] = useState<number>(session.current_round)
+  const [cumulativeScore, setCumulativeScore] = useState<number>(0)
 
-  // 기존 점수 불러오기
+  // 기존 점수 불러오기 및 누적 점수 계산
   useEffect(() => {
     const loadExistingScores = async () => {
       try {
         setIsLoading(true)
+        
+        // 현재 라운드의 점수 불러오기
         const response = await trainingAPI.getScores(session.id, currentRound)
         
         if (response.success && response.data) {
-          const existingShots: Shot[] = response.data.scores.map((score: any) => ({
+          // arrow_number 순서대로 정렬
+          const sortedScores = response.data.scores.sort((a: any, b: any) => a.arrow_number - b.arrow_number)
+          
+          const existingShots: Shot[] = sortedScores.map((score: any) => ({
             id: score.arrow_number,
-            x: 0, // 기존 점수는 x, y 좌표가 없으므로 0으로 설정
-            y: 0,
+            x: score.x !== null && score.x !== undefined ? score.x : 0, // DB에서 좌표 불러오기
+            y: score.y !== null && score.y !== undefined ? score.y : 0,
             score: score.score,
-            scoringRing: 0 // 기본값
+            scoringRing: score.scoring_ring !== null && score.scoring_ring !== undefined ? score.scoring_ring : 0
           }))
+          
+          // console.log('📥 DB에서 불러온 화살 데이터 (정렬됨):', existingShots)
           
           setShots(existingShots)
           setCurrentShot(existingShots.length)
         }
+        
+        // 1부터 currentRound까지의 누적 점수 계산
+        let totalScore = 0
+        for (let round = 1; round <= currentRound; round++) {
+          try {
+            const roundResponse = await trainingAPI.getScores(session.id, round)
+            if (roundResponse.success && roundResponse.data) {
+              const roundScore = roundResponse.data.scores.reduce(
+                (sum: number, score: any) => sum + (score.score || 0),
+                0
+              )
+              totalScore += roundScore
+            }
+          } catch (error) {
+            console.error(`라운드 ${round} 점수 불러오기 오류:`, error)
+          }
+        }
+        setCumulativeScore(totalScore)
+        
       } catch (error) {
         console.error('기존 점수 불러오기 오류:', error)
         // 오류가 발생해도 계속 진행
@@ -67,17 +105,6 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
 
     loadExistingScores()
   }, [session.id, currentRound])
-
-
-  // 안드로이드 앱의 WA Full 타겟 색상 정의
-  const WA_COLORS = {
-    LEMON_YELLOW: '#FFE135',    // -0x914f1
-    FLAMINGO_RED: '#FC4C4E',    // -0x10b1b4
-    CERULEAN_BLUE: '#00B4D8',   // -0xff5211
-    BLACK: '#000000',           // -0x1000000
-    WHITE: '#FFFFFF',           // -0x1
-    DARK_GRAY: '#2D2D2D'        // -0xdde0e1
-  }
 
   // 타겟 타입별 점수 계산 (안드로이드 앱 로직 참조)
   const calculateScore = (x: number, y: number): { score: number; scoringRing: number } => {
@@ -90,11 +117,11 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
     const radius = 400
     const normalizedDistance = distance / radius
     
-    console.log('🎯 클릭 위치:', { 
-      percentage: `${(normalizedDistance * 100).toFixed(2)}%`,
-      targetType: session.target_type,
-      normalizedDistance: normalizedDistance.toFixed(4)
-    })
+    // console.log('🎯 클릭 위치:', { 
+    //   percentage: `${(normalizedDistance * 100).toFixed(2)}%`,
+    //   targetType: session.target_type,
+    //   normalizedDistance: normalizedDistance.toFixed(4)
+    // })
     
     
     // 타겟 타입별 점수 계산
@@ -102,56 +129,56 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
       case 'wa_6_ring':
         // WA 6 Ring 타겟 (이미지 기준) - 1번:X, 2번:10, 3번:9, 4번:8, 5번:7, 6번:6, 7번:5
         if (normalizedDistance <= 0.084) {
-          console.log('🎯 X (10점) - 임계값: 0.084 (8.4%)')
+          // console.log('🎯 X (10점) - 임계값: 0.084 (8.4%)')
           return { score: 10, scoringRing: 0 } // 1번 - X (8.4%) - 정중앙 X
         } else if (normalizedDistance <= 0.166) {
-          console.log('🎯 10점 - 임계값: 0.166 (16.6%)')
+          // console.log('🎯 10점 - 임계값: 0.166 (16.6%)')
           return { score: 10, scoringRing: 1 } // 2번 - 10점 (16.6%) - 10점 라인
         } else if (normalizedDistance <= 0.334) {
-          console.log('🎯 9점 - 임계값: 0.334 (33.4%)')
+          // console.log('🎯 9점 - 임계값: 0.334 (33.4%)')
           return { score: 9, scoringRing: 2 } // 3번 - 9점 (33.4%) - 9점 라인
         } else if (normalizedDistance <= 0.5) {
-          console.log('🎯 8점 - 임계값: 0.5 (50%)')
+          // console.log('🎯 8점 - 임계값: 0.5 (50%)')
           return { score: 8, scoringRing: 3 } // 4번 - 8점 (50%) - 8점 라인
         } else if (normalizedDistance <= 0.666) {
-          console.log('🎯 7점 - 임계값: 0.666 (66.6%)')
+          // console.log('🎯 7점 - 임계값: 0.666 (66.6%)')
           return { score: 7, scoringRing: 4 } // 5번 - 7점 (66.6%) - 7점 라인
         } else if (normalizedDistance <= 0.917) {
-          console.log('🎯 6점 - 임계값: 0.917 (91.7%)')
+          // console.log('🎯 6점 - 임계값: 0.917 (91.7%)')
           return { score: 6, scoringRing: 5 } // 6번 - 6점 (91.7%) - 6점 라인
         } else if (normalizedDistance <= 1.0) {
-          console.log('🎯 5점 (마지막 라인) - 임계값: 1.0 (100%)')
+          // console.log('🎯 5점 (마지막 라인) - 임계값: 1.0 (100%)')
           return { score: 5, scoringRing: 6 } // 7번 - 5점 (100%) - 5점 라인 (마지막)
         } else {
-          console.log('🎯 M (미스) - 임계값 초과: 1.0 (100%)')
+          // console.log('🎯 M (미스) - 임계값 초과: 1.0 (100%)')
           return { score: 0, scoringRing: -1 } // M (미스) - 과녁 밖
         }
       
       case 'wa_5_ring':
         // WA 5 Ring 타겟 (이미지 기준) - 1번:X, 2번:10, 3번:9, 4번:8, 5번:7, 6번:6, 7번:5
         if (normalizedDistance <= 0.1) {
-          console.log('🎯 X (10점) - 임계값: 0.1 (10%)')
+          // console.log('🎯 X (10점) - 임계값: 0.1 (10%)')
           return { score: 10, scoringRing: 0 } // 1번 - X (10%) - 정중앙 X
         } else if (normalizedDistance <= 0.2) {
-          console.log('🎯 10점 - 임계값: 0.2 (20%)')
+          // console.log('🎯 10점 - 임계값: 0.2 (20%)')
           return { score: 10, scoringRing: 1 } // 2번 - 10점 (20%) - 10점 라인
         } else if (normalizedDistance <= 0.4) {
-          console.log('🎯 9점 - 임계값: 0.4 (40%)')
+          // console.log('🎯 9점 - 임계값: 0.4 (40%)')
           return { score: 9, scoringRing: 2 } // 3번 - 9점 (40%) - 9점 라인
         } else if (normalizedDistance <= 0.6) {
-          console.log('🎯 8점 - 임계값: 0.6 (60%)')
+          // console.log('🎯 8점 - 임계값: 0.6 (60%)')
           return { score: 8, scoringRing: 3 } // 4번 - 8점 (60%) - 8점 라인
         } else if (normalizedDistance <= 0.8) {
-          console.log('🎯 7점 - 임계값: 0.8 (80%)')
+          // console.log('🎯 7점 - 임계값: 0.8 (80%)')
           return { score: 7, scoringRing: 4 } // 5번 - 7점 (80%) - 7점 라인
         } else if (normalizedDistance <= 1.0) {
-          console.log('🎯 6점 - 임계값: 1.0 (100%)')
+          // console.log('🎯 6점 - 임계값: 1.0 (100%)')
           return { score: 6, scoringRing: 5 } // 6번 - 6점 (100%) - 6점 라인
         } else if (normalizedDistance <= 1.2) {
-          console.log('🎯 5점 (마지막 라인) - 임계값: 1.2 (120%)')
+          // console.log('🎯 5점 (마지막 라인) - 임계값: 1.2 (120%)')
           return { score: 5, scoringRing: 6 } // 7번 - 5점 (120%) - 5점 라인 (마지막)
         } else {
-          console.log('🎯 M (미스) - 임계값 초과: 1.2 (120%)')
+          // console.log('🎯 M (미스) - 임계값 초과: 1.2 (120%)')
           return { score: 0, scoringRing: -1 } // M (미스) - 과녁 밖
         }
       
@@ -213,40 +240,40 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
       default:
         // WA Full 타겟 (이미지 기준) - 1번:X, 2번:10, 3번:9, 4번:8, 5번:7, 6번:6, 7번:5, 8번:4, 9번:3, 10번:2, 11번:1
         if (normalizedDistance <= 0.05) {
-          console.log('🎯 X (10점) - 임계값: 0.05 (5%)')
+          // console.log('🎯 X (10점) - 임계값: 0.05 (5%)')
           return { score: 10, scoringRing: 0 } // 1번 - X (5%) - 정중앙 X
         } else if (normalizedDistance <= 0.1) {
-          console.log('🎯 10점 - 임계값: 0.1 (10%)')
+          // console.log('🎯 10점 - 임계값: 0.1 (10%)')
           return { score: 10, scoringRing: 1 } // 2번 - 10점 (10%) - 10점 라인
         } else if (normalizedDistance <= 0.21) {
-          console.log('🎯 9점 - 임계값: 0.21 (21%)')
+          // console.log('🎯 9점 - 임계값: 0.21 (21%)')
           return { score: 9, scoringRing: 2 } // 3번 - 9점 (20%) - 9점 라인
         } else if (normalizedDistance <= 0.31) {
-          console.log('🎯 8점 - 임계값: 0.3 (30%)')
+          // console.log('🎯 8점 - 임계값: 0.3 (30%)')
           return { score: 8, scoringRing: 3 } // 4번 - 8점 (30%) - 8점 라인
         } else if (normalizedDistance <= 0.415) {
-          console.log('🎯 7점 - 임계값: 0.415 (41.5%)')
+          // console.log('🎯 7점 - 임계값: 0.415 (41.5%)')
           return { score: 7, scoringRing: 4 } // 5번 - 7점 (40%) - 7점 라인
         } else if (normalizedDistance <= 0.51) {
-          console.log('🎯 6점 - 임계값: 0.5 (50%)')
+          // console.log('🎯 6점 - 임계값: 0.5 (50%)')
           return { score: 6, scoringRing: 5 } // 6번 - 6점 (50%) - 6점 라인
         } else if (normalizedDistance <= 0.61) {
-          console.log('🎯 5점 - 임계값: 0.6 (60%)')
+          // console.log('🎯 5점 - 임계값: 0.6 (60%)')
           return { score: 5, scoringRing: 6 } // 7번 - 5점 (60%) - 5점 라인
         } else if (normalizedDistance <= 0.71) {
-          console.log('🎯 4점 - 임계값: 0.7 (70%)')
+          // console.log('🎯 4점 - 임계값: 0.7 (70%)')
           return { score: 4, scoringRing: 7 } // 8번 - 4점 (70%) - 4점 라인
         } else if (normalizedDistance <= 0.81) {
-          console.log('🎯 3점 - 임계값: 0.8 (80%)')
+          // console.log('🎯 3점 - 임계값: 0.8 (80%)')
           return { score: 3, scoringRing: 8 } // 9번 - 3점 (80%) - 3점 라인
         } else if (normalizedDistance <= 0.91) {
-          console.log('🎯 2점 - 임계값: 0.9 (90%)')
+          // console.log('🎯 2점 - 임계값: 0.9 (90%)')
           return { score: 2, scoringRing: 9 } // 10번 - 2점 (90%) - 2점 라인
         } else if (normalizedDistance <= 1.0) {
-          console.log('🎯 1점 (마지막 라인) - 임계값: 1.0 (100%)')
+          // console.log('🎯 1점 (마지막 라인) - 임계값: 1.0 (100%)')
           return { score: 1, scoringRing: 10 } // 11번 - 1점 (100%) - 1점 라인 (마지막)
         } else {
-          console.log('🎯 M (미스) - 임계값 초과: 1.0 (100%)')
+          // console.log('🎯 M (미스) - 임계값 초과: 1.0 (100%)')
           return { score: 0, scoringRing: -1 } // M (미스) - 과녁 밖
         }
     }
@@ -255,54 +282,60 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
 
   // 캔버스 클릭 핸들러
   const handleCanvasClick = async (event: React.MouseEvent<HTMLCanvasElement>) => {
-    console.log('🎯 캔버스 클릭 이벤트 발생!', event.type)
-    console.log('🎯 이벤트 상세:', {
-      type: event.type,
-      target: event.target,
-      currentTarget: event.currentTarget,
-      clientX: event.clientX,
-      clientY: event.clientY
-    })
+    // console.log('🎯 캔버스 클릭 이벤트 발생!', event.type)
+    // console.log('🎯 이벤트 상세:', {
+    //   type: event.type,
+    //   target: event.target,
+    //   currentTarget: event.currentTarget,
+    //   clientX: event.clientX,
+    //   clientY: event.clientY
+    // })
     
     event.preventDefault()
     event.stopPropagation()
     
-    console.log('🎯 캔버스 클릭됨!', { 
-      currentShot, 
-      arrowCount, 
-      shotsLength: shots.length,
-      eventType: event.type,
-      target: event.target
-    })
+    // console.log('🎯 캔버스 클릭됨!', { 
+    //   currentShot, 
+    //   arrowCount, 
+    //   shotsLength: shots.length,
+    //   eventType: event.type,
+    //   target: event.target
+    // })
     
     if (currentShot >= arrowCount) {
-      console.log('❌ 모든 화살을 이미 쏨')
+      // console.log('❌ 모든 화살을 이미 쏨')
       alert('모든 화살을 이미 쏘셨습니다!')
       return
     }
 
     const canvas = canvasRef.current
     if (!canvas) {
-      console.log('❌ 캔버스 참조 없음')
+      // console.log('❌ 캔버스 참조 없음')
       return
     }
 
     const rect = canvas.getBoundingClientRect()
-    const x = event.clientX - rect.left
-    const y = event.clientY - rect.top
+    const clickX = event.clientX - rect.left
+    const clickY = event.clientY - rect.top
+    
+    // 캔버스 실제 크기와 내부 좌표계(800x800) 스케일 계산
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    
+    // 클릭 좌표를 캔버스 내부 좌표계로 변환
+    const x = clickX * scaleX
+    const y = clickY * scaleY
 
-    console.log('📍 클릭 좌표:', { 
-      x, 
-      y, 
-      clientX: event.clientX,
-      clientY: event.clientY,
-      rect: { 
-        left: rect.left, 
-        top: rect.top, 
-        width: rect.width, 
-        height: rect.height 
-      }
-    })
+    // console.log('📍 클릭 좌표:', { 
+    //   clickX, 
+    //   clickY,
+    //   scaledX: x,
+    //   scaledY: y,
+    //   scaleX,
+    //   scaleY,
+    //   canvasSize: { width: canvas.width, height: canvas.height },
+    //   displaySize: { width: rect.width, height: rect.height }
+    // })
 
     const { score, scoringRing } = calculateScore(x, y)
     // console.log('🎯 계산된 점수:', { score, scoringRing })
@@ -318,71 +351,96 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
     const newShots = [...shots, newShot]
     const newCurrentShot = currentShot + 1
 
-    console.log('✅ 새 화살 추가:', newShot)
-    console.log('📋 새 화살 목록:', newShots)
+    // console.log('✅ 새 화살 추가:', newShot)
+    // console.log('📋 새 화살 목록:', newShots)
 
     setShots(newShots)
     setCurrentShot(newCurrentShot)
 
+    // 점수를 바로 DB에 저장 (자동 저장)
+    try {
+      const dataToSave = {
+        training_id: session.id,
+        round_number: currentRound,
+        score: newShot.score,
+        arrow_number: newShot.id,
+        x: newShot.x,
+        y: newShot.y,
+        scoring_ring: newShot.scoringRing
+      }
+      
+      // console.log('💾 저장할 데이터:', dataToSave)
+      
+      await trainingAPI.recordScore(dataToSave)
+      
+      // console.log('✅ 점수, 좌표 및 scoringRing 자동 저장 완료:', newShot)
+      
+      // 누적 점수 업데이트
+      setCumulativeScore(cumulativeScore + newShot.score)
+      
+      // 세션 목록 새로고침
+      onRefresh?.()
+    } catch (error) {
+      console.error('❌ 점수 저장 오류:', error)
+      // 저장 실패 시 롤백
+      setShots(shots)
+      setCurrentShot(currentShot)
+      alert('점수 저장에 실패했습니다. 다시 시도해주세요.')
+      return
+    }
+
     // 모든 화살을 쏘면 완료 상태로 설정
     if (newCurrentShot >= arrowCount) {
-      console.log('✅ 모든 화살 완료!', { newCurrentShot, arrowCount, isComplete: true })
+      // console.log('✅ 모든 화살 완료!', { newCurrentShot, arrowCount, isComplete: true })
       setIsComplete(true)
     }
   }
 
-  // 점수 저장
-  const handleSaveScores = async (shotsToSave?: Shot[]) => {
-    const shotsToProcess = shotsToSave || shots
-    if (shotsToProcess.length === 0) return
-
-    try {
-      for (const shot of shotsToProcess) {
-        await trainingAPI.recordScore({
-          training_id: session.id,
-          round_number: currentRound,
-          score: shot.score,
-          arrow_number: shot.id
-        })
-      }
-      
-      alert('점수가 저장되었습니다!')
-      onRefresh?.() // 세션 목록 새로고침
-    } catch (error) {
-      console.error('점수 저장 오류:', error)
-      alert('점수 저장 중 오류가 발생했습니다.')
-    }
-  }
+  // 점수 저장 함수는 자동 저장으로 대체되어 제거됨
 
   // 마지막 화살 제거
-  const handleUndoLastShot = () => {
-    console.log('🗑️ 마지막 화살 삭제 버튼 클릭됨!', { shotsLength: shots.length, currentShot })
+  const handleUndoLastShot = async () => {
+    // console.log('🗑️ 마지막 화살 삭제 버튼 클릭됨!', { shotsLength: shots.length, currentShot })
     
     if (shots.length > 0) {
+      const lastShot = shots[shots.length - 1]
       const newShots = shots.slice(0, -1)
       const newCurrentShot = currentShot - 1
       
-      console.log('🗑️ 새로운 화살 목록:', newShots)
-      console.log('🗑️ 새로운 현재 화살:', newCurrentShot)
+      // console.log('🗑️ 새로운 화살 목록:', newShots)
+      // console.log('🗑️ 새로운 현재 화살:', newCurrentShot)
       
-      setShots(newShots)
-      setCurrentShot(newCurrentShot)
-      setIsComplete(false) // 완료 상태 해제
-      
-      console.log('✅ 화살 삭제 완료!')
+      // DB에서도 삭제 (마지막 화살)
+      try {
+        await trainingAPI.deleteScore(session.id, currentRound, lastShot.id)
+        // console.log('💾 DB에서 점수 삭제 완료:', lastShot)
+        
+        // 누적 점수 업데이트
+        setCumulativeScore(cumulativeScore - lastShot.score)
+        
+        setShots(newShots)
+        setCurrentShot(newCurrentShot)
+        setIsComplete(false) // 완료 상태 해제
+        
+        // 세션 목록 새로고침
+        onRefresh?.()
+        
+        // console.log('✅ 화살 삭제 완료!')
+      } catch (error) {
+        console.error('❌ 점수 삭제 오류:', error)
+        alert('점수 삭제에 실패했습니다.')
+      }
     } else {
-      console.log('❌ 삭제할 화살이 없습니다')
+      // console.log('❌ 삭제할 화살이 없습니다')
       alert('삭제할 화살이 없습니다')
     }
   }
 
   // 다음 End로 이동
   const handleNextEnd = async () => {
-    console.log('➡️ 다음 End 버튼 클릭됨!', { shotsLength: shots.length })
+    // console.log('➡️ 다음 End 버튼 클릭됨!', { shotsLength: shots.length })
     
     try {
-      // 현재 End의 점수를 DB에 저장
-      await handleSaveScores(shots)
       // 방금 완료한 End의 R 값 계산 및 저장 (localStorage)
       try {
         const completedRound = currentRound
@@ -393,15 +451,15 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
           const endR = denominator > 0 ? endTotal / denominator : 0
           const key = `endR:${session.id}:${completedRound}`
           localStorage.setItem(key, JSON.stringify({ r: endR, total: endTotal, arrows: arrowCount, round: completedRound }))
-          console.log('✅ End R 저장:', { key, endR, endTotal, denominator })
+          // console.log('✅ End R 저장:', { key, endR, endTotal, denominator })
         }
       } catch (e) {
-        console.warn('End R 계산/저장 실패:', e)
+        // console.warn('End R 계산/저장 실패:', e)
       }
       
       // 다음 End로 이동 (라운드 증가)
       const nextRound = currentRound + 1
-      console.log('➡️ 다음 라운드로 이동:', nextRound)
+      // console.log('➡️ 다음 라운드로 이동:', nextRound)
       
       // 화살 목록 초기화
       setShots([])
@@ -412,7 +470,7 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
       // 세션 목록 새로고침
       onRefresh?.()
       
-      console.log('✅ 다음 End로 이동 완료!')
+      // console.log('✅ 다음 End로 이동 완료!')
     } catch (error) {
       console.error('❌ 다음 End 이동 오류:', error)
       alert('다음 End로 이동 중 오류가 발생했습니다: ' + (error as Error).message)
@@ -422,6 +480,9 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
 
   // 타겟 타입별 과녁 그리기 (안드로이드 앱 기준)
   useEffect(() => {
+    // 로딩 중이면 그리지 않음
+    if (isLoading) return
+    
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -467,7 +528,10 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
       case 'wa_vertical_3_spot':
       case 'wa_horizontal_3_spot': {
         // 3-스팟 렌더링: WA 6 Ring 스타일의 작은 과녁 3개
-        // 기본 캔버스 기준 중심/반지름
+        // 배경을 흰색으로 그리기
+        ctx.fillStyle = '#FFFFFF'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+
         const centerX = 400
         const centerY = 400
         const radius = 400
@@ -496,9 +560,7 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
 
         const spotRadius = radius * 0.22
 
-        // 배경 초기화는 공통으로 되어 있으니, 여기서 직접 그리기
-        // 기존 zones 방식 대신 직접 원을 그림
-        // draw spots
+        // 3-스팟 그리기
         spotCenters.forEach((c) => {
           for (let i = wa6.length - 1; i >= 0; i--) {
             const rr = spotRadius * wa6[i].r
@@ -512,21 +574,36 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
           }
         })
 
-        // 3-스팟 위에 화살 표시 (공통 루프를 타지 않으므로 여기서 직접 표시)
-        shots.forEach((shot, index) => {
+        // 3-스팟 위에 화살 표시
+        shots.forEach((shot) => {
           const x = shot.x
           const y = shot.y
+          
+          // 좌표가 없는 경우 화살을 그리지 않음
+          if (x === 0 && y === 0) {
+            // console.log(`⚠️ (3-스팟) 화살 ${shot.id}번의 좌표가 없습니다`)
+            return
+          }
+          
+          // console.log(`🎯 (3-스팟) 화살 ${shot.id}번 그리기: (x: ${x}, y: ${y})`)
+          
           ctx.beginPath()
-          ctx.arc(x, y, 8, 0, 2 * Math.PI)
+          ctx.arc(x, y, 10, 0, 2 * Math.PI)
           ctx.fillStyle = '#FF0000'
           ctx.fill()
           ctx.strokeStyle = '#000'
           ctx.lineWidth = 2
           ctx.stroke()
-          ctx.fillStyle = '#000'
-          ctx.font = 'bold 14px Arial'
+          
+          // 화살 번호 표시 (흰색 텍스트 + 검은색 테두리)
+          ctx.font = 'bold 16px Arial'
           ctx.textAlign = 'center'
-          ctx.fillText((index + 1).toString(), x, y + 5)
+          ctx.textBaseline = 'middle'
+          ctx.strokeStyle = '#000'
+          ctx.lineWidth = 3
+          ctx.strokeText(shot.id.toString(), x, y)
+          ctx.fillStyle = '#FFF'
+          ctx.fillText(shot.id.toString(), x, y)
         })
 
         return
@@ -569,26 +646,38 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
 
 
     // 기존 화살 표시
-    shots.forEach((shot, index) => {
-      const x = shot.x // 실제 클릭한 x 좌표
-      const y = shot.y // 실제 클릭한 y 좌표
+    shots.forEach((shot) => {
+      const x = shot.x
+      const y = shot.y
+      
+      // 좌표가 없는 경우 화살을 그리지 않음
+      if (x === 0 && y === 0) {
+        // console.log(`⚠️ 화살 ${shot.id}번의 좌표가 없습니다 (x: ${x}, y: ${y})`)
+        return
+      }
+      
+      // console.log(`🎯 화살 ${shot.id}번 그리기: (x: ${x}, y: ${y})`)
       
       ctx.beginPath()
-      ctx.arc(x, y, 8, 0, 2 * Math.PI)
+      ctx.arc(x, y, 10, 0, 2 * Math.PI)
       ctx.fillStyle = '#FF0000'
       ctx.fill()
       ctx.strokeStyle = '#000'
       ctx.lineWidth = 2
       ctx.stroke()
       
-      // 화살 번호 표시
-      ctx.fillStyle = '#000'
-      ctx.font = 'bold 14px Arial'
+      // 화살 번호 표시 (흰색 텍스트 + 검은색 테두리)
+      ctx.font = 'bold 16px Arial'
       ctx.textAlign = 'center'
-      ctx.fillText((index + 1).toString(), x, y + 5)
+      ctx.textBaseline = 'middle'
+      ctx.strokeStyle = '#000'
+      ctx.lineWidth = 3
+      ctx.strokeText(shot.id.toString(), x, y)
+      ctx.fillStyle = '#FFF'
+      ctx.fillText(shot.id.toString(), x, y)
     })
 
-  }, [shots, session.target_type, currentRound])
+  }, [shots, session.target_type, currentRound, isLoading])
 
 
   // 점수에 따른 배경색 반환 함수 (X, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 구성)
@@ -688,14 +777,16 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
             <div className="flex items-center justify-between mb-6">
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
+                onClick={() => {
                   console.log('뒤로 가기 버튼 클릭됨')
-                  navigate('/trainings')
+                  if (onBack) {
+                    onBack()
+                  } else {
+                    navigate('/trainings')
+                  }
                 }}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg gradient-animate relative z-10 cursor-pointer"
-                style={{ border: 'none', outline: 'none', pointerEvents: 'auto' }}
+                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg cursor-pointer"
+                style={{ position: 'relative', zIndex: 100, pointerEvents: 'auto' }}
               >
                 <ArrowLeft size={18} />
                 <span className="font-medium">뒤로 가기</span>
@@ -731,7 +822,7 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
                   <div className="flex items-center justify-between">
                     <span className="text-lg font-bold text-gray-800">End {currentRound}</span>
                     <span className="text-lg font-bold text-gray-800">
-                      {shots.reduce((sum, shot) => sum + shot.score, 0)}/{arrowCount * 10}
+                      {cumulativeScore}/{currentRound * arrowCount * 10}
                     </span>
                   </div>
                 </div>
@@ -784,13 +875,14 @@ export default function TargetScoreInput({ session, arrowCount, onRefresh }: Tar
                   width={800}
                   height={800}
                   onClick={handleCanvasClick}
-                  onMouseDown={(e) => console.log('🖱️ MouseDown 이벤트:', e.type)}
                   className="border border-gray-300 rounded-lg cursor-crosshair hover:border-gray-400 transition-colors"
                   style={{ 
                     touchAction: 'none',
                     pointerEvents: 'auto',
                     position: 'relative',
-                    zIndex: 10
+                    zIndex: 10,
+                    maxWidth: '100%',
+                    height: 'auto'
                   }}
                 />
               {isComplete && (

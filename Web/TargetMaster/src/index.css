@@ -63,16 +63,20 @@ body {
   margin-left: 1.5rem;
 }
 
+.space-y-1 > * + * {
+  margin-top: 0.25rem;
+}
+
+.space-y-4 > * + * {
+  margin-top: 1rem;
+}
+
 .space-y-6 > * + * {
   margin-top: 1.5rem;
 }
 
 .space-y-8 > * + * {
   margin-top: 2rem;
-}
-
-.space-y-4 > * + * {
-  margin-top: 1rem;
 }
 
 /* Grid */
@@ -90,6 +94,10 @@ body {
 
 .grid-cols-4 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.gap-4 {
+  gap: 1rem;
 }
 
 .gap-6 {
@@ -116,7 +124,27 @@ body {
   gap: 5rem;
 }
 
+.gap-x-8 {
+  column-gap: 2rem;
+}
+
+.gap-y-6 {
+  row-gap: 1.5rem;
+}
+
 /* Spacing */
+.p-2 {
+  padding: 0.5rem;
+}
+
+.p-3 {
+  padding: 0.75rem;
+}
+
+.p-4 {
+  padding: 1rem;
+}
+
 .p-6 {
   padding: 1.5rem;
 }
@@ -1128,6 +1156,16 @@ body {
   padding-right: 1rem;
 }
 
+.px-5 {
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+.px-8 {
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
 .py-3 {
   padding-top: 0.75rem;
   padding-bottom: 0.75rem;
@@ -1174,6 +1212,18 @@ body {
 
 .mt-1 {
   margin-top: 0.25rem;
+}
+
+.mt-2 {
+  margin-top: 0.5rem;
+}
+
+.mt-4 {
+  margin-top: 1rem;
+}
+
+.mt-6 {
+  margin-top: 1.5rem;
 }
 
 /* Additional text utilities */
@@ -1309,6 +1359,11 @@ body {
 /* Whitespace utilities */
 .whitespace-nowrap {
   white-space: nowrap;
+}
+
+/* Cursor utilities */
+.cursor-pointer {
+  cursor: pointer;
 }
 
 /* Divide utilities */

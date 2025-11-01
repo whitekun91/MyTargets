@@ -244,6 +244,19 @@ const createTrainingScoresTable = async () => {
       console.log('✓ training_scores 테이블이 성공적으로 생성되었습니다.');
     }
     
+    // x, y, scoring_ring 컬럼 추가 (이미 있으면 무시)
+    try {
+      await client.query(`
+        ALTER TABLE training_scores 
+        ADD COLUMN IF NOT EXISTS x NUMERIC,
+        ADD COLUMN IF NOT EXISTS y NUMERIC,
+        ADD COLUMN IF NOT EXISTS scoring_ring INTEGER;
+      `);
+      console.log('✓ training_scores 테이블에 x, y, scoring_ring 컬럼이 추가되었습니다.');
+    } catch (error) {
+      console.log('⚠ x, y, scoring_ring 컬럼 추가 중 오류 (이미 존재할 수 있음):', error.message);
+    }
+    
     client.release();
   } catch (error) {
     console.error('training_scores 테이블 생성 실패:', error);
@@ -745,7 +758,7 @@ app.post('/api/training/score', async (req, res) => {
     }
 
     const decoded = verifyTokenOrThrow(token);
-    const { training_id, round_number, score, arrow_number } = req.body;
+    const { training_id, round_number, score, arrow_number, x, y, scoring_ring } = req.body;
 
     // 필수 필드 검증
     if (!training_id || !round_number || score === undefined) {
@@ -768,10 +781,10 @@ app.post('/api/training/score', async (req, res) => {
       });
     }
 
-    // 점수 기록
+    // 점수 기록 (x, y 좌표 및 scoring_ring 포함)
     const scoreResult = await pool.query(
-      'INSERT INTO training_scores (training_id, round_number, score, arrow_number) VALUES ($1, $2, $3, $4) RETURNING *',
-      [training_id, round_number, score, arrow_number]
+      'INSERT INTO training_scores (training_id, round_number, score, arrow_number, x, y, scoring_ring) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [training_id, round_number, score, arrow_number, x || null, y || null, scoring_ring || null]
     );
 
     // 훈련 세션의 총 점수 업데이트

@@ -14,6 +14,8 @@ interface TrainingSession {
   current_round: number
   total_score: number
   created_at: string
+  actual_end_count?: number
+  max_score?: number
 }
 
 interface TrainingHistoryProps {
@@ -39,10 +41,46 @@ export default function TrainingHistory({ onBack, onSelectSession }: TrainingHis
         const response = await trainingAPI.getTrainingSessions()
         
         if (response.success && response.data) {
-          setSessions(response.data.sessions)
+          // 각 세션의 실제 엔드 수와 최대 점수 계산
+          const sessionsWithStats = await Promise.all(
+            response.data.sessions.map(async (session: TrainingSession) => {
+              try {
+                let endCount = 0
+                let totalMaxScore = 0
+                
+                for (let round = 1; round <= 100; round++) {
+                  try {
+                    const roundResponse = await trainingAPI.getScores(session.id, round)
+                    if (roundResponse.success && roundResponse.data && roundResponse.data.scores && roundResponse.data.scores.length > 0) {
+                      endCount++
+                      totalMaxScore += roundResponse.data.scores.length * 10
+                    } else {
+                      if (endCount > 0 && round > endCount + 5) {
+                        break
+                      }
+                    }
+                  } catch {
+                    if (endCount > 0 && round > endCount + 5) {
+                      break
+                    }
+                  }
+                }
+                
+                return {
+                  ...session,
+                  actual_end_count: endCount,
+                  max_score: totalMaxScore
+                }
+              } catch (error) {
+                return session
+              }
+            })
+          )
+          
+          setSessions(sessionsWithStats)
           
           // 월별로 그룹화
-          const grouped = response.data.sessions.reduce((acc: GroupedSessions, session) => {
+          const grouped = sessionsWithStats.reduce((acc: GroupedSessions, session) => {
             const date = new Date(session.date)
             const monthKey = `${date.getFullYear()}년 ${date.getMonth() + 1}월`
             
@@ -183,10 +221,10 @@ export default function TrainingHistory({ onBack, onSelectSession }: TrainingHis
                 {expandedMonths.has(month) && (
                   <div className="divide-y divide-gray-200">
                     {monthSessions.map((session) => (
-                      <button
+                      <div
                         key={session.id}
                         onClick={() => handleSessionClick(session)}
-                        className="w-full p-4 text-left hover:bg-gray-50 transition-colors"
+                        className="w-full p-4 text-left hover:bg-gray-50 transition-colors cursor-pointer"
                       >
                         <div className="flex items-center justify-between">
                           <div>
@@ -200,7 +238,7 @@ export default function TrainingHistory({ onBack, onSelectSession }: TrainingHis
                           <div className="flex items-center space-x-4">
                             <div className="text-right">
                               <p className="text-lg font-medium text-gray-900">
-                                {session.total_score}/{session.current_round * 10}
+                                {session.total_score} / {session.max_score || 0}
                               </p>
                               <p className="text-sm text-gray-500">
                                 {session.distance}m
@@ -208,14 +246,14 @@ export default function TrainingHistory({ onBack, onSelectSession }: TrainingHis
                             </div>
                             <button
                               onClick={(e) => handleDeleteSession(e, session)}
-                              className="p-2 rounded hover:bg-red-50 text-red-600 hover:text-red-700"
+                              className="p-3 rounded hover:bg-red-50 text-red-600 hover:text-red-700"
                               title="세션 삭제"
                             >
-                              <Trash2 size={18} />
+                              <Trash2 size={24} />
                             </button>
                           </div>
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 )}

@@ -48,19 +48,17 @@ export default function TrainingSession({ onBack, onStartTraining }: TrainingSes
 
     // 토큰 확인
     const token = localStorage.getItem('token')
-    console.log('현재 토큰:', token ? '존재함' : '없음')
+    // console.log('현재 토큰:', token ? '존재함' : '없음')
 
-    console.log('세션 생성 시작:', {
-      session_name: sessionName,
-      distance,
-      target_type: targetType,
-    })
+    // console.log('세션 생성 시작:', {
+    //   session_name: sessionName,
+    //   distance,
+    //   target_type: targetType,
+    // })
 
     setIsCreating(true)
     
     try {
-      // 실제로는 기존 세션을 찾는 로직이 필요하지만, 
-      // 지금은 임시로 새 세션을 생성하되 기존 점수를 불러오도록 함
       const response = await trainingAPI.createSession({
         session_name: sessionName,
         distance,
@@ -68,7 +66,7 @@ export default function TrainingSession({ onBack, onStartTraining }: TrainingSes
         arrow_count: arrowCount,
       })
 
-      console.log('세션 생성 응답:', response)
+      // console.log('세션 생성 응답:', response)
 
       if (response.success && response.data) {
         const session = response.data.session as TrainingSession
@@ -180,7 +178,7 @@ export default function TrainingSession({ onBack, onStartTraining }: TrainingSes
             ) : (
               <>
                 <Plus size={20} />
-                <span>기록 시작 / 라운드 추가</span>
+                <span>새 훈련 시작</span>
               </>
             )}
           </button>
@@ -194,7 +192,7 @@ export default function TrainingSession({ onBack, onStartTraining }: TrainingSes
               <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
                 {/* 라운드 리스트는 현재 표시하지 않음 */}
                 <div className="px-6 py-8 text-center text-gray-500">
-                  <p>라운드를 시작하려면 위의 "기록 시작" 버튼을 눌러주세요.</p>
+                  <p>새 훈련을 시작하려면 위의 "새 훈련 시작" 버튼을 눌러주세요.</p>
                 </div>
               </div>
             </div>

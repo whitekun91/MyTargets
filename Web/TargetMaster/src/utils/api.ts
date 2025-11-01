@@ -165,6 +165,9 @@ export const trainingAPI = {
     round_number: number;
     score: number;
     arrow_number: number;
+    x?: number;
+    y?: number;
+    scoring_ring?: number;
   }): Promise<ApiResponse> => {
     return apiRequest('/training/score', {
       method: 'POST',
